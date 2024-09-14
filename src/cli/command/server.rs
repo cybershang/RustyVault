@@ -22,6 +22,7 @@ use crate::{
     errors::RvError,
     http,
     storage,
+    metrics::manager::MetricsManager, 
     EXIT_CODE_INSUFFICIENT_PARAMS, EXIT_CODE_LOAD_CONFIG_FAILURE, EXIT_CODE_OK,
 };
 
@@ -113,7 +114,14 @@ pub fn main(config_path: &str) -> Result<(), RvError> {
 
     let barrier = storage::barrier_aes_gcm::AESGCMBarrier::new(Arc::clone(&backend));
 
-    let core = Arc::new(RwLock::new(Core { physical: backend, barrier: Arc::new(barrier), ..Default::default() }));
+    let metrics_manager = MetricsManager::new();
+
+    let core = Arc::new(RwLock::new(Core {
+        physical: backend,
+        barrier: Arc::new(barrier),
+        prometheus_registry: Arc::clone(&metrics_manager.prometheus_registry),
+        ..Default::default()
+    }));
 
     {
         let mut c = core.write()?;
@@ -182,7 +190,12 @@ pub fn main(config_path: &str) -> Result<(), RvError> {
 
     log::info!("rusty_vault server starts, waiting for request...");
 
-    server.block_on(async { http_server.run().await })?;
+    server.block_on(async {
+        tokio::spawn(async move {
+            metrics_manager.system_metrics.start_collecting().await;
+        });
+        http_server.run().await
+    })?;
     let _ = server.run();
 
     Ok(())
