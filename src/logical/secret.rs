@@ -1,9 +1,6 @@
-use std::{
-    ops::{Deref, DerefMut},
-    sync::Arc,
-    time::Duration,
-};
+use std::{sync::Arc, time::Duration};
 
+use derive_more::{Deref, DerefMut};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -12,10 +9,14 @@ use crate::errors::RvError;
 
 type SecretOperationHandler = dyn Fn(&dyn Backend, &mut Request) -> Result<Option<Response>, RvError> + Send + Sync;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Deref, DerefMut)]
 pub struct SecretData {
+    #[deref]
+    #[deref_mut]
+    #[serde(flatten)]
     pub lease: Lease,
     pub lease_id: String,
+    #[serde(skip)]
     pub internal_data: Map<String, Value>,
 }
 
@@ -24,20 +25,6 @@ pub struct Secret {
     pub default_duration: Duration,
     pub renew_handler: Option<Arc<SecretOperationHandler>>,
     pub revoke_handler: Option<Arc<SecretOperationHandler>>,
-}
-
-impl Deref for SecretData {
-    type Target = Lease;
-
-    fn deref(&self) -> &Lease {
-        &self.lease
-    }
-}
-
-impl DerefMut for SecretData {
-    fn deref_mut(&mut self) -> &mut Lease {
-        &mut self.lease
-    }
 }
 
 impl Secret {

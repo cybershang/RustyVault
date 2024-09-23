@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{UserPassBackend, UserPassBackendInner};
 use crate::{
+    context::Context,
     errors::RvError,
     logical::{Backend, Field, FieldType, Operation, Path, PathOperation, Request, Response},
     new_fields, new_fields_internal, new_path, new_path_internal,
@@ -13,7 +14,7 @@ use crate::{
 
 //const DEFAULT_MAX_TTL: Duration = Duration::from_secs(365*24*60*60 as u64);
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UserEntry {
     pub password_hash: String,
     pub policies: Vec<String>,
@@ -21,17 +22,6 @@ pub struct UserEntry {
     pub ttl: Duration,
     #[serde(serialize_with = "serialize_duration", deserialize_with = "deserialize_duration")]
     pub max_ttl: Duration,
-}
-
-impl Default for UserEntry {
-    fn default() -> Self {
-        Self {
-            password_hash: String::new(),
-            policies: Vec::new(),
-            ttl: Duration::from_secs(0),
-            max_ttl: Duration::from_secs(0),
-        }
-    }
 }
 
 impl UserPassBackend {

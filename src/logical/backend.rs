@@ -3,10 +3,12 @@ use std::{collections::HashMap, sync::Arc};
 use regex::Regex;
 use serde_json::{Map, Value};
 
-use super::{path::Path, request::Request, response::Response, secret::Secret, FieldType, Backend, Operation};
-use crate::errors::RvError;
+use super::{path::Path, request::Request, response::Response, secret::Secret, Backend, FieldType, Operation};
+use crate::{context::Context, errors::RvError};
 
 type BackendOperationHandler = dyn Fn(&dyn Backend, &mut Request) -> Result<Option<Response>, RvError> + Send + Sync;
+
+pub const CTX_KEY_BACKEND_PATH: &str = "backend.path";
 
 #[derive(Clone)]
 pub struct LogicalBackend {
@@ -17,6 +19,7 @@ pub struct LogicalBackend {
     pub help: String,
     pub secrets: Vec<Arc<Secret>>,
     pub auth_renew_handler: Option<Arc<BackendOperationHandler>>,
+    pub ctx: Arc<Context>,
 }
 
 impl Backend for LogicalBackend {
@@ -58,6 +61,10 @@ impl Backend for LogicalBackend {
         Some(self.root_paths.clone())
     }
 
+    fn get_ctx(&self) -> Option<Arc<Context>> {
+        Some(Arc::clone(&self.ctx))
+    }
+
     fn handle_request(&self, req: &mut Request) -> Result<Option<Response>, RvError> {
         if req.storage.is_none() {
             return Err(RvError::ErrRequestNotReady);
@@ -86,6 +93,7 @@ impl Backend for LogicalBackend {
             req.match_path = Some(path.clone());
             for operation in &path.operations {
                 if operation.op == req.operation {
+                    self.ctx.set(CTX_KEY_BACKEND_PATH, path.clone());
                     let ret = operation.handle_request(self, req);
                     self.clear_secret_field(req);
                     return ret;
@@ -113,6 +121,7 @@ impl LogicalBackend {
             help: String::new(),
             secrets: Vec::new(),
             auth_renew_handler: None,
+            ctx: Arc::new(Context::new()),
         }
     }
 
@@ -244,16 +253,15 @@ macro_rules! new_logical_backend_internal {
 
 #[cfg(test)]
 mod test {
-    use std::{collections::HashMap, env, fs, sync::Arc, time::Duration};
+    use std::{sync::Arc, time::Duration};
 
-    use go_defer::defer;
     use serde_json::json;
 
     use super::*;
     use crate::{
-        logical::{Field, field::FieldTrait, FieldType, PathOperation},
-        new_fields, new_fields_internal, new_path, new_path_internal, new_secret, new_secret_internal,
-        storage,
+        logical::{field::FieldTrait, Field, FieldType, PathOperation},
+        new_fields, new_fields_internal, new_path, new_path_internal, new_secret, new_secret_internal, storage,
+        test_utils::test_backend,
     };
 
     struct MyTest;
@@ -296,18 +304,9 @@ mod test {
 
     #[test]
     fn test_logical_backend_api() {
-        let dir = env::temp_dir().join("rusty_vault_test_logical_api");
-        assert!(fs::create_dir(&dir).is_ok());
-        defer! (
-            assert!(fs::remove_dir_all(&dir).is_ok());
-        );
+        let backend = test_backend("test_logical_backend_api");
 
         let t = MyTest::new();
-
-        let mut conf: HashMap<String, Value> = HashMap::new();
-        conf.insert("path".to_string(), Value::String(dir.to_string_lossy().into_owned()));
-
-        let backend = storage::new_backend("file", &conf).unwrap();
 
         let barrier = storage::barrier_aes_gcm::AESGCMBarrier::new(Arc::clone(&backend));
 
@@ -429,7 +428,10 @@ mod test {
             "mytype": 1,
             "mypath": "/pp",
             "mypassword": "123qwe",
-        }).as_object().unwrap().clone();
+        })
+        .as_object()
+        .unwrap()
+        .clone();
         req.body = Some(body);
         req.storage = Some(Arc::new(barrier));
         assert!(logical_backend.handle_request(&mut req).is_ok());
@@ -459,16 +461,7 @@ mod test {
 
     #[test]
     fn test_logical_path_field() {
-        let dir = env::temp_dir().join("rusty_vault_test_logical_path_field");
-        assert!(fs::create_dir(&dir).is_ok());
-        defer! (
-            assert!(fs::remove_dir_all(&dir).is_ok());
-        );
-
-        let mut conf: HashMap<String, Value> = HashMap::new();
-        conf.insert("path".to_string(), Value::String(dir.to_string_lossy().into_owned()));
-
-        let backend = storage::new_backend("file", &conf).unwrap();
+        let backend = test_backend("test_logical_path_field");
 
         let barrier = storage::barrier_aes_gcm::AESGCMBarrier::new(Arc::clone(&backend));
 

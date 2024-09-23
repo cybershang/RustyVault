@@ -35,11 +35,14 @@ pub mod module_manager;
 pub mod modules;
 pub mod mount;
 pub mod router;
+#[cfg(feature = "storage_mysql")]
+pub mod schema;
 pub mod shamir;
 pub mod storage;
 pub mod utils;
-#[cfg(feature = "storage_mysql")]
-pub mod schema;
+
+#[cfg(test)]
+pub mod test_utils;
 
 /// Exit ok
 pub const EXIT_CODE_OK: sysexits::ExitCode = sysexits::ExitCode::Ok;

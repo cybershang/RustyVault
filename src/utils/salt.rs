@@ -1,60 +1,43 @@
 //! This module is a Rust replica of
 //! <https://github.com/hashicorp/vault/blob/main/sdk/helper/salt/salt.go>
 
+use better_default::Default;
+use derivative::Derivative;
 use openssl::{
     hash::{hash, MessageDigest},
-    pkey::PKey,
     nid::Nid,
+    pkey::PKey,
     sign::Signer,
 };
-use derivative::Derivative;
 
-use super::{
-    generate_uuid,
-};
-
+use super::generate_uuid;
 use crate::{
-    storage::{Storage, StorageEntry},
     errors::RvError,
+    storage::{Storage, StorageEntry},
 };
 
 static DEFAULT_LOCATION: &str = "salt";
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Salt {
     pub config: Config,
+    #[default(generate_uuid())]
     pub salt: String,
+    #[default(true)]
     pub generated: bool,
 }
 
-#[derive(Derivative)]
+#[derive(Derivative, Default)]
 #[derivative(Debug, Clone)]
 pub struct Config {
+    #[default(DEFAULT_LOCATION.to_string())]
     pub location: String,
-    #[derivative(Debug="ignore")]
+    #[derivative(Debug = "ignore")]
+    #[default(MessageDigest::sha256())]
     pub hash_type: MessageDigest,
-    #[derivative(Debug="ignore")]
+    #[derivative(Debug = "ignore")]
+    #[default(MessageDigest::sha256())]
     pub hmac_type: MessageDigest,
-}
-
-impl Default for Salt {
-    fn default() -> Self {
-        Self {
-            salt: generate_uuid(),
-            generated: true,
-            config: Config::default(),
-        }
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            location: DEFAULT_LOCATION.to_string(),
-            hash_type: MessageDigest::sha256(),
-            hmac_type: MessageDigest::sha256(),
-        }
-    }
 }
 
 impl Salt {
@@ -79,10 +62,7 @@ impl Salt {
                 salt.salt = String::from_utf8_lossy(&raw.value).to_string();
                 salt.generated = false;
             } else {
-                let entry = StorageEntry {
-                    key: salt.config.location.clone(),
-                    value: salt.salt.as_bytes().to_vec(),
-                };
+                let entry = StorageEntry { key: salt.config.location.clone(), value: salt.salt.as_bytes().to_vec() };
 
                 s.put(&entry)?;
             }
@@ -136,36 +116,23 @@ impl Salt {
 
 #[cfg(test)]
 mod test {
-    use std::{collections::HashMap, env, fs, sync::Arc};
-    use go_defer::defer;
+    use std::sync::Arc;
+
     use rand::{thread_rng, Rng};
-    use serde_json::Value;
+
     use super::*;
     use crate::{
-        storage::{
-            barrier_view, barrier_aes_gcm,
-            barrier::SecurityBarrier,
-        }
+        storage::{barrier::SecurityBarrier, barrier_aes_gcm, barrier_view},
+        test_utils::test_backend,
     };
 
     #[test]
     fn test_salt() {
-        // init the storage
-        let dir = env::temp_dir().join("rusty_vault_test_salt");
-        assert!(fs::create_dir(&dir).is_ok());
-        defer! (
-            assert!(fs::remove_dir_all(&dir).is_ok());
-        );
-
-        let mut conf: HashMap<String, Value> = HashMap::new();
-        conf.insert("path".to_string(), Value::String(dir.to_string_lossy().into_owned()));
+        // init the storage backend
+        let backend = test_backend("test_salt");
 
         let mut key = vec![0u8; 32];
         thread_rng().fill(key.as_mut_slice());
-
-        let backend = crate::storage::new_backend("file", &conf);
-        assert!(backend.is_ok());
-        let backend = backend.unwrap();
         let aes_gcm_view = barrier_aes_gcm::AESGCMBarrier::new(Arc::clone(&backend));
 
         let init = aes_gcm_view.init(key.as_slice());
@@ -176,7 +143,7 @@ mod test {
         let view = barrier_view::BarrierView::new(Arc::new(aes_gcm_view), "test");
 
         //test salt
-        let salt = Salt::new(Some(view.as_storage()), None);
+        let salt = Salt::new(Some(&view), None);
         assert!(salt.is_ok());
 
         let salt = salt.unwrap();
@@ -186,7 +153,7 @@ mod test {
         assert!(ss.is_ok());
         assert!(ss.unwrap().is_some());
 
-        let salt2 = Salt::new(Some(view.as_storage()), Some(&salt.config));
+        let salt2 = Salt::new(Some(&view), Some(&salt.config));
         assert!(salt2.is_ok());
 
         let salt2 = salt2.unwrap();
@@ -203,6 +170,6 @@ mod test {
         let sid1 = sid1.unwrap();
         let sid2 = sid2.unwrap();
         assert_eq!(sid1, sid2);
-        assert_eq!(sid1.len(), salt.config.hash_type.size()*2);
+        assert_eq!(sid1.len(), salt.config.hash_type.size() * 2);
     }
 }

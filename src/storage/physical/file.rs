@@ -8,8 +8,10 @@ use std::{
 
 use serde_json::Value;
 
-use crate::storage::{Backend, BackendEntry};
-use crate::errors::RvError;
+use crate::{
+    errors::RvError,
+    storage::{Backend, BackendEntry},
+};
 
 #[derive(Debug)]
 pub struct FileBackend {
@@ -135,33 +137,14 @@ impl FileBackend {
 
 #[cfg(test)]
 mod test {
-    use std::{collections::HashMap, env, fs};
-
-    use go_defer::defer;
-
-    use super::{
-        super::super::test::{test_backend, test_backend_list_prefix},
-        *,
-    };
+    use super::super::super::test::{test_backend_curd, test_backend_list_prefix};
+    use crate::test_utils::test_backend;
 
     #[test]
     fn test_file_backend() {
-        let dir = env::temp_dir().join("rusty_vault");
-        assert!(fs::create_dir(&dir).is_ok());
-        defer! (
-            assert!(fs::remove_dir_all(&dir).is_ok());
-        );
+        let backend = test_backend("test_file_backend");
 
-        let mut conf: HashMap<String, Value> = HashMap::new();
-        conf.insert("path".to_string(), Value::String(dir.to_string_lossy().into_owned()));
-
-        let backend = FileBackend::new(&conf);
-
-        assert!(backend.is_ok());
-
-        let backend = backend.unwrap();
-
-        test_backend(&backend);
-        test_backend_list_prefix(&backend);
+        test_backend_curd(backend.as_ref());
+        test_backend_list_prefix(backend.as_ref());
     }
 }

@@ -17,12 +17,8 @@ use openssl::{
 use sysexits::ExitCode;
 
 use crate::{
-    cli::config,
-    core::Core,
-    errors::RvError,
-    http,
-    storage,
-    EXIT_CODE_INSUFFICIENT_PARAMS, EXIT_CODE_LOAD_CONFIG_FAILURE, EXIT_CODE_OK,
+    cli::config, core::Core, errors::RvError, http, storage, EXIT_CODE_INSUFFICIENT_PARAMS,
+    EXIT_CODE_LOAD_CONFIG_FAILURE, EXIT_CODE_OK,
 };
 
 pub const WORK_DIR_PATH_DEFAULT: &str = "/tmp/rusty_vault";
@@ -160,6 +156,10 @@ pub fn main(config_path: &str) -> Result<(), RvError> {
         if listener.tls_max_version == SslVersion::TLS1_3 {
             builder.clear_options(SslOptions::NO_TLSV1_3);
             builder.set_ciphersuites("TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256")?;
+        }
+
+        if !listener.tls_disable_client_certs {
+            builder.set_verify_callback(SslVerifyMode::PEER, |_, _| true);
         }
 
         if listener.tls_require_and_verify_client_cert {
